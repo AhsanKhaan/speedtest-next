@@ -7,6 +7,10 @@ import { TestButton } from "./test-button"
 import { TestLoader } from "./test-loader"
 import { initWebVitals } from "@/lib/web-vitals"
 import { generateTestFile } from "@/lib/test-file-generator"
+// import { useDownloadSpeed } from "@/lib/useDownloadSpeed";
+import { useAdaptiveDownloadSpeed } from "@/lib/useAdaptiveDownloadSpeed";
+import { useAdaptiveUploadSpeed } from "@/lib/useAdaptiveUploadSpeed";
+
 
 interface SpeedTestState {
   ping: number | null
@@ -65,52 +69,52 @@ export function SpeedTestClient({ initialLocation }: SpeedTestClientProps) {
     }
   }, [])
 
-  const testDownload = useCallback(async (): Promise<number> => {
-    try {
-      const fileSize = 5 * 1024 * 1024 // 5MB test file
-      const testUrl = `/api/test-download?size=${fileSize}&t=${Date.now()}`
 
-      const start = performance.now()
-      const response = await fetch(testUrl, { cache: "no-store" })
+const { adaptiveDownload } = useAdaptiveDownloadSpeed();
 
-      if (!response.ok) throw new Error("Download failed")
+const testDownload = useCallback(async (): Promise<number> => {
+  try {
+    let latest = 0;
+    const mbps = await adaptiveDownload({
+      warmupSizeMB: 2,
+      maxSizeMB: 64,
+      parallel: 3,
+      samples: 3,
+      onProgress: (speed) => {
+        latest = speed;
+        setState((prev) => ({ ...prev, download: speed }));
+      },
+    });
+    return mbps || latest;
+  } catch (err) {
+    console.error("[Adaptive] Download test failed:", err);
+    throw err;
+  }
+}, [adaptiveDownload]);
 
-      const buffer = await response.arrayBuffer()
-      const end = performance.now()
 
-      const duration = (end - start) / 1000
-      const sizeMB = buffer.byteLength / 1024 / 1024
-      const speedMbps = (sizeMB * 8) / duration
+const { adaptiveUpload } = useAdaptiveUploadSpeed();
 
-      return Math.max(0.01, speedMbps)
-    } catch (error) {
-      console.error("[v0] Download test failed:", error)
-      throw error
-    }
-  }, [])
+const testUpload = useCallback(async (): Promise<number> => {
+  try {
+    let latest = 0;
+    const speed = await adaptiveUpload({
+      warmupSizeMB: 1,
+      maxSizeMB: 32,
+      parallel: 3,
+      samples: 2,
+      onProgress: (mbps) => {
+        latest = mbps;
+        setState((prev) => ({ ...prev, upload: mbps }));
+      },
+    });
+    return speed || latest;
+  } catch (err) {
+    console.error("[Adaptive] Upload test failed:", err);
+    throw err;
+  }
+}, [adaptiveUpload]);
 
-  const testUpload = useCallback(async (): Promise<number> => {
-    try {
-      const uploadSize = 2 * 1024 * 1024
-      const testFile = generateTestFile(uploadSize / 1024)
-
-      const start = performance.now()
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: testFile,
-        headers: { "Content-Type": "application/octet-stream" },
-      })
-      const end = performance.now()
-
-      if (!response.ok) throw new Error("Upload failed")
-
-      const result = await response.json()
-      return result.upload || 0
-    } catch (error) {
-      console.error("[v0] Upload test failed:", error)
-      throw error
-    }
-  }, [])
 
   const runTest = useCallback(async () => {
     setState((prev) => ({

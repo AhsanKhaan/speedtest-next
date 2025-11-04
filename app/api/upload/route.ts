@@ -1,33 +1,61 @@
-// Node.js runtime for upload test - measures upload speed
-export const maxDuration = 30
+// /app/api/upload/route.ts
+export const runtime = "edge";
+
+const HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: HEADERS });
+}
 
 export async function POST(request: Request) {
-  const startTime = Date.now()
-
   try {
-    // Read and discard the uploaded data
-    const buffer = await request.arrayBuffer()
-    const endTime = Date.now()
+    if (!request.body) {
+      return new Response(JSON.stringify({ error: "No body" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...HEADERS },
+      });
+    }
 
-    const duration = Math.max(1, endTime - startTime) // milliseconds
-    const sizeKB = buffer.byteLength / 1024
-    const speedMbps = (sizeKB / 1024 / (duration / 1000)) * 8 // Convert to Mbps
+    const reader = request.body.getReader();
+    let received = 0;
+    const start = Date.now();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value?.byteLength ?? 0;
+    }
+
+    const end = Date.now();
+    const duration = (end - start) / 1000 || 0.001;
+    const serverMbps = (received * 8) / 1e6 / duration;
 
     return new Response(
       JSON.stringify({
-        upload: Math.max(0.01, speedMbps),
+        message: "Upload complete",
+        receivedBytes: received,
+        serverMbps: Number(serverMbps.toFixed(2)),
         duration,
-        size: buffer.byteLength,
+        region: request.headers.get("x-vercel-edge-region") || "unknown",
       }),
       {
         status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store",
-        },
-      },
-    )
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "Upload test failed" }), { status: 500 })
+        headers: { "Content-Type": "application/json", ...HEADERS },
+      }
+    );
+  } catch (err: any) {
+    console.error("[upload route] error", err);
+    return new Response(
+      JSON.stringify({ error: "Upload failed", details: String(err) }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...HEADERS },
+      }
+    );
   }
 }
