@@ -38,7 +38,7 @@ export function ThemeToggle() {
       variant="outline"
       size="icon"
       onClick={toggleTheme}
-      className="rounded-full bg-transparent"
+      className="rounded-full bg-transparent dark:hover:bg-white"
       aria-label="Toggle theme"
     >
       {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
